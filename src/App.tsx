@@ -9,8 +9,9 @@ enum Controls {
   left = 'left',
   right = 'right',
   jump = 'jump',
-  leftPunch = 'left punch',
-  rightPunch = 'right punch',
+  attack1 = 'attack one',
+  attack2 = 'attack two',
+  roll = 'roll',
 }
 
 function App() {
@@ -21,8 +22,9 @@ function App() {
       { name: Controls.left, keys: ['ArrowLeft', 'KeyQ'] },
       { name: Controls.right, keys: ['ArrowRight', 'KeyE'] },
       { name: Controls.jump, keys: ['Space'] },
-      { name: Controls.leftPunch, keys: ['KeyR'] },
-      { name: Controls.rightPunch, keys: ['KeyF'] },
+      { name: Controls.attack1, keys: ['KeyR'] },
+      { name: Controls.attack2, keys: ['KeyF'] },
+      { name: Controls.roll, keys: ['KeyC'] },
     ],
     []
   );

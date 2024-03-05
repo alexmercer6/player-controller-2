@@ -26,7 +26,7 @@ export const Ground = () => {
       receiveShadow={true}
       name="Ground"
     >
-      <planeGeometry args={[100, 100, 100]} />
+      <boxGeometry args={[100, 100, 1]} />
       <meshStandardMaterial
         clipShadows={false}
         map={floorTexture}

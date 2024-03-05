@@ -4,6 +4,7 @@ import { useMemo, useRef } from 'react';
 
 import {
   Box3,
+  Group,
   Mesh,
   Quaternion,
   Raycaster,
@@ -16,12 +17,15 @@ import {
   collisionDistance,
   gravity,
   jumpVelocity,
-  playerMovementSpeed,
+  playerRunSpeed,
+  playerTurnSpeed,
 } from '../constants/constants';
 import { visualizeRay } from '../utils/visualiseRay';
 import { generateRayDirections } from '../utils/generateSemiCircleDirections';
 import { generateVerticalRays } from '../utils/generateVerticalRays';
 import { Model } from './Model';
+import { CharacterAnimation } from '../animations/CharacterAnimations';
+import { useGame } from '../store/useGame';
 
 export const Controls = {
   forward: 'forward',
@@ -29,8 +33,9 @@ export const Controls = {
   left: 'left',
   right: 'right',
   jump: 'jump',
-  leftPunch: 'left punch',
-  rightPunch: 'right punch',
+  attackOne: 'attack one',
+  attackTwo: 'attack two',
+  roll: 'roll',
 };
 
 export const CharacterController = () => {
@@ -38,6 +43,19 @@ export const CharacterController = () => {
   const MOVEMENT_SPEED = 0.3;
   const MAX_VEL = 3;
   const RUN_VEL = 1;
+
+  // Animation change functions
+  const idleAnimation = useGame((state) => state.idle);
+  const walkAnimation = useGame((state) => state.walk);
+  const runAnimation = useGame((state) => state.run);
+  const jumpAnimation = useGame((state) => state.jump);
+  const jumpIdleAnimation = useGame((state) => state.jumpIdle);
+  const fallAnimation = useGame((state) => state.fall);
+  const action1Animation = useGame((state) => state.action1);
+  const action2Animation = useGame((state) => state.action2);
+  const action3Animation = useGame((state) => state.action3);
+  const action4Animation = useGame((state) => state.action4);
+
   const jumpPressed = useKeyboardControls((state) => state[Controls.jump]);
   const leftPressed = useKeyboardControls((state) => state[Controls.left]);
   const rightPressed = useKeyboardControls((state) => state[Controls.right]);
@@ -45,10 +63,17 @@ export const CharacterController = () => {
   const forwardPressed = useKeyboardControls(
     (state) => state[Controls.forward]
   );
+  const attackOnePressed = useKeyboardControls(
+    (state) => state[Controls.attackOne]
+  );
+  const attackTwoPressed = useKeyboardControls(
+    (state) => state[Controls.attackTwo]
+  );
+  const rollPressed = useKeyboardControls((state) => state[Controls.roll]);
   const { camera } = useThree();
   camera.layers.enable(1);
 
-  const character = useRef<Mesh>(null);
+  const character = useRef<Group>(null);
   const velocity = useRef<number>(0);
   const isJumping = useRef<boolean>(false);
   const isMouseDown = useRef<boolean>(false);
@@ -109,6 +134,7 @@ export const CharacterController = () => {
   }, [character.current]);
 
   useFrame(({ camera }, delta) => {
+    const deltaTime = delta * 100;
     if (character.current) {
       if (bboxRef.current) {
         bboxRef.current.position.set(
@@ -151,6 +177,20 @@ export const CharacterController = () => {
       //   collisionDistance,
       //   intersectObjects: scene.children,
       // });
+      if (attackOnePressed && action1Animation) {
+        action1Animation();
+      }
+
+      if (attackTwoPressed && action2Animation) {
+        action2Animation();
+      }
+
+      if (rollPressed && action3Animation) {
+        action3Animation();
+        direction.set(0, 0, playerRunSpeed * deltaTime);
+        // character.current.position.add(direction);
+        character.current.translateOnAxis(direction, 0.1);
+      }
 
       const isOnGround = isColliding({
         direction: downward,
@@ -164,21 +204,21 @@ export const CharacterController = () => {
       if (!isOnGround) {
         // visualizeRay(character.current.position, downward, scene);
         // Update velocity and position for gravity
-        const newVelocity = velocity.current - gravity * 0.02; // Gravity effect
-        character.current.position.y += newVelocity * 0.02; // Update position
+        const newVelocity = velocity.current - gravity * 0.02 * deltaTime; // Gravity effect
+        character.current.position.y += newVelocity * 0.02 * deltaTime; // Update position
         velocity.current = newVelocity;
       }
       if (jumpPressed && !isJumping.current) {
         isJumping.current = true;
-        velocity.current = jumpVelocity;
+        velocity.current = jumpVelocity * deltaTime;
         // isOnFloor.current = false;
       }
 
       if (rightPressed) {
-        character.current.rotateY(-0.05);
+        character.current.rotateY(-playerTurnSpeed * deltaTime);
       }
       if (leftPressed) {
-        character.current.rotateY(0.05);
+        character.current.rotateY(playerTurnSpeed * deltaTime);
       }
       if (backPressed) {
         const backwardDirectionRays = generateRayDirections(direction, 10, 160);
@@ -229,11 +269,12 @@ export const CharacterController = () => {
             (e) => e
           )
         ) {
-          direction.set(0, 0, -playerMovementSpeed);
+          direction.set(0, 0, -playerRunSpeed * deltaTime);
           character.current.translateOnAxis(direction, 0.1);
         }
       }
       if (forwardPressed) {
+        if (runAnimation) runAnimation();
         const forwardDirectionRays = generateRayDirections(direction, 10, 160);
         const vert = generateVerticalRays(
           direction,
@@ -284,7 +325,7 @@ export const CharacterController = () => {
           canMoveForwardHorizontal.every((e) => Boolean(e)) &&
           canMoveForwardVertical.every((e) => Boolean(e))
         ) {
-          direction.set(0, 0, playerMovementSpeed);
+          direction.set(0, 0, playerRunSpeed * deltaTime);
           character.current.translateOnAxis(direction, 0.1);
         }
       }
@@ -296,18 +337,18 @@ export const CharacterController = () => {
 
         // Ground contact
         if (isOnGround && characterDimensions) {
-          const collisionNormal = isOnGround.normal?.clone();
-          const collisionObjectPositionY =
-            isOnGround.point.y -
-            (character.current.position.y - characterDimensions.height / 2);
-          let overlapY =
-            characterDimensions.height / 2 - Math.abs(collisionObjectPositionY);
-          collisionNormal?.multiplyScalar(overlapY);
-          if (collisionNormal) {
-            console.debug('before', character.current.position, isOnGround);
-            character.current.position.y += collisionNormal.y;
-            console.debug('after', character.current.position, isOnGround);
-          }
+          // const collisionNormal = isOnGround.normal?.clone();
+          // const collisionObjectPositionY =
+          //   isOnGround.point.y -
+          //   (character.current.position.y - characterDimensions.height / 2);
+          // let overlapY =
+          //   characterDimensions.height / 2 - Math.abs(collisionObjectPositionY);
+          // collisionNormal?.multiplyScalar(overlapY);
+          // if (collisionNormal) {
+          //   console.debug('before', character.current.position, isOnGround);
+          //   character.current.position.y += collisionNormal.y;
+          //   console.debug('after', character.current.position, isOnGround);
+          // }
 
           isJumping.current = false;
         }
@@ -315,6 +356,16 @@ export const CharacterController = () => {
         velocity.current = newVelocity;
       }
 
+      if (
+        !forwardPressed &&
+        !backPressed &&
+        !leftPressed &&
+        !rightPressed &&
+        !jumpPressed &&
+        idleAnimation
+      ) {
+        idleAnimation();
+      }
       // const delta = clock.getDelta();
       // moveModel(keyboard, activeModel);
 
@@ -371,25 +422,30 @@ export const CharacterController = () => {
         makeDefault={true}
         ref={controlsRef}
       />
-      <mesh
+      {/* <mesh
         ref={character}
         position={[0, 10, 0]}
         castShadow
         name="Character"
-        visible={false}
+        visible={true}
       >
         <capsuleGeometry args={[0.5, 0.5]} />
         <meshStandardMaterial
           color={'skyblue'}
           wireframe
         />
-      </mesh>
-      <Model
-        // currentAnimation="CharacterArmature|Idle"
-        controllerPosition={character.current?.position}
-        controllerRotation={character.current?.rotation}
-        props={{ scale: 0.5 }}
-      />
+      </mesh> */}
+      <group
+        ref={character}
+        position={[0, 10, 0]}
+      >
+        <Model
+          // currentAnimation="CharacterArmature|Idle"
+          controllerPosition={character.current?.position}
+          controllerRotation={character.current?.rotation}
+          props={{ scale: 0.5 }}
+        />
+      </group>
     </>
   );
 };
