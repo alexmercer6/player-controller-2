@@ -12,6 +12,7 @@ enum Controls {
   attack1 = 'attack one',
   attack2 = 'attack two',
   roll = 'roll',
+  cameraFollow = 'cameraFollow',
 }
 
 function App() {
@@ -25,6 +26,7 @@ function App() {
       { name: Controls.attack1, keys: ['KeyR'] },
       { name: Controls.attack2, keys: ['KeyF'] },
       { name: Controls.roll, keys: ['KeyC'] },
+      { name: Controls.cameraFollow, keys: ['KeyP'] },
     ],
     []
   );

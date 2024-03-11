@@ -1,10 +1,11 @@
 import { OrbitControls, useKeyboardControls } from '@react-three/drei';
 import { useFrame, useThree } from '@react-three/fiber';
-import { useMemo, useRef } from 'react';
+import { RefObject, useMemo, useRef } from 'react';
 
 import {
   Box3,
   Group,
+  MathUtils,
   Mesh,
   Quaternion,
   Raycaster,
@@ -17,6 +18,7 @@ import {
   collisionDistance,
   gravity,
   jumpVelocity,
+  maxSlopeAngle,
   playerRunSpeed,
   playerTurnSpeed,
 } from '../constants/constants';
@@ -26,6 +28,10 @@ import { generateVerticalRays } from '../utils/generateVerticalRays';
 import { Model } from './Model';
 import { CharacterAnimation } from '../animations/CharacterAnimations';
 import { useGame } from '../store/useGame';
+import { generateSlopeDetectionRay } from '../utils/generateSlopeDetectionRay';
+import { getSlopeAngle } from '../utils/getSlopeAngle';
+import { handleGroundCollision } from '../utils/handleGroundCollision';
+import { handleMovement } from '../utils/handleMovement';
 
 export const Controls = {
   forward: 'forward',
@@ -36,6 +42,7 @@ export const Controls = {
   attackOne: 'attack one',
   attackTwo: 'attack two',
   roll: 'roll',
+  cameraFollow: 'cameraFollow',
 };
 
 export const CharacterController = () => {
@@ -70,13 +77,16 @@ export const CharacterController = () => {
     (state) => state[Controls.attackTwo]
   );
   const rollPressed = useKeyboardControls((state) => state[Controls.roll]);
-  const { camera } = useThree();
+  const cameraFollowPressed = useKeyboardControls(
+    (state) => state[Controls.cameraFollow]
+  );
+  const { camera, scene } = useThree();
   camera.layers.enable(1);
 
   const character = useRef<Group>(null);
   const velocity = useRef<number>(0);
   const isJumping = useRef<boolean>(false);
-  const isMouseDown = useRef<boolean>(false);
+  const isCameraFollow = useRef<boolean>(true);
   const controlsRef = useRef<OrbitControlsType>(null);
   const bboxRef = useRef<Mesh>(null);
 
@@ -88,6 +98,8 @@ export const CharacterController = () => {
   const up = new Vector3(0, 1, 0);
   const downward = new Vector3(0, -1, 0);
   const currentQuat = new Quaternion();
+  const characterFeetPosition = new Vector3();
+  const intialCameraPosition = new Vector3(0, 15, 0);
 
   const verticalRayOrigin = new Vector3();
 
@@ -96,8 +108,6 @@ export const CharacterController = () => {
 
   const raycaster = new Raycaster();
   raycaster.layers.disable(1);
-
-  const { scene } = useThree();
 
   const calculateOffset = (
     { position, rotation }: { position: Vector3; rotation: Quaternion },
@@ -111,12 +121,8 @@ export const CharacterController = () => {
     return offSet;
   };
 
-  window.addEventListener('mousedown', () => {
-    isMouseDown.current = true;
-  });
-
-  window.addEventListener('mouseup', () => {
-    isMouseDown.current = false;
+  window.addEventListener('keypress', (e) => {
+    if (cameraFollowPressed) isCameraFollow.current = !isCameraFollow.current;
   });
 
   const characterDimensions = useMemo(() => {
@@ -133,16 +139,27 @@ export const CharacterController = () => {
     return null;
   }, [character.current]);
 
+  const applyGravity = (deltaTime: number, object: RefObject<Group>) => {
+    if (object.current) {
+      // const newVelocity = velocity.current - gravity * 0.02 * deltaTime; // Gravity effect
+      // character.current.position.y += newVelocity * 0.02 * deltaTime; // Update position
+      // velocity.current = newVelocity;
+
+      velocity.current -= gravity * deltaTime;
+
+      // Update the character's position based on the new velocity.
+      // Position change due to velocity should also consider deltaTime to be frame rate independent.
+      // Here, you multiply the velocity by deltaTime to calculate the displacement.
+      object.current.position.y += velocity.current * deltaTime;
+    }
+  };
+
   useFrame(({ camera }, delta) => {
-    const deltaTime = delta * 100;
+    if (controlsRef.current) {
+      controlsRef.current.enabled = !isCameraFollow.current;
+    }
+    const deltaTime = delta;
     if (character.current) {
-      if (bboxRef.current) {
-        bboxRef.current.position.set(
-          character.current.position.x,
-          character.current.position.y,
-          character.current.position.z
-        );
-      }
       character.current.getWorldDirection(direction);
       backward.copy(direction).negate();
       left.crossVectors(direction, up).negate();
@@ -170,13 +187,17 @@ export const CharacterController = () => {
       //   intersectObjects: scene.children,
       // });
 
-      // const canMoveUp = !isColliding({
-      //   direction: up,
-      //   raycaster,
-      //   rayStartPosition: character.current.position,
-      //   collisionDistance,
-      //   intersectObjects: scene.children,
-      // });
+      const upBlocked = isColliding({
+        direction: up,
+        raycaster,
+        rayStartPosition: character.current.position,
+        collisionDistance,
+        intersectObjects: scene.children,
+      });
+
+      if (upBlocked) {
+        velocity.current = 0;
+      }
       if (attackOnePressed && action1Animation) {
         action1Animation();
       }
@@ -196,22 +217,33 @@ export const CharacterController = () => {
         direction: downward,
         raycaster,
         rayStartPosition: character.current.position,
-        collisionDistance,
-        intersectObjects: scene.children.filter(
-          (e) => e.name !== 'Character' && e.name !== 'Model'
-        ),
+        collisionDistance: characterDimensions?.height
+          ? characterDimensions?.height
+          : collisionDistance,
+        intersectObjects: scene.children,
       });
-      if (!isOnGround) {
-        // visualizeRay(character.current.position, downward, scene);
-        // Update velocity and position for gravity
-        const newVelocity = velocity.current - gravity * 0.02 * deltaTime; // Gravity effect
-        character.current.position.y += newVelocity * 0.02 * deltaTime; // Update position
-        velocity.current = newVelocity;
+      if (isOnGround) {
+        velocity.current = 0;
+        if (
+          isOnGround.object.name === 'Moving platform' &&
+          !forwardPressed &&
+          characterDimensions
+        ) {
+          character.current.position.set(
+            isOnGround.object.position.x,
+            isOnGround.point.y + characterDimensions.height,
+            isOnGround.object.position.z
+          );
+        }
+      }
+
+      if (!isOnGround && !forwardPressed) {
+        applyGravity(deltaTime, character);
       }
       if (jumpPressed && !isJumping.current) {
         isJumping.current = true;
-        velocity.current = jumpVelocity * deltaTime;
-        // isOnFloor.current = false;
+
+        velocity.current = jumpVelocity;
       }
 
       if (rightPressed) {
@@ -220,140 +252,143 @@ export const CharacterController = () => {
       if (leftPressed) {
         character.current.rotateY(playerTurnSpeed * deltaTime);
       }
-      if (backPressed) {
-        const backwardDirectionRays = generateRayDirections(direction, 10, 160);
-        const vert = generateVerticalRays(
+      if (backPressed && characterDimensions) {
+        handleMovement({
+          raycaster,
+          object: character,
           direction,
-          characterDimensions?.height ?? 0,
-          4
-        );
-
-        const canMoveBackwardsHorizontal = backwardDirectionRays.map(
-          (rayDirection) => {
-            if (character.current) {
-              return !isColliding({
-                direction: rayDirection,
-                raycaster,
-                rayStartPosition: character.current.position,
-                collisionDistance: characterDimensions?.radius ?? 0,
-                intersectObjects: scene.children,
-              });
-            }
-            return false;
-          }
-        );
-
-        const canMoveBackwardsVertical = vert.map((e) => {
-          if (character.current) {
-            const rayStartPosition = verticalRayOrigin.set(
-              character.current.position.x,
-              character.current.position.y + e.height,
-              character.current.position.z
-            );
-            // visualizeRay(rayStartPosition, e.direction, scene, 1);
-            return !isColliding({
-              direction: e.direction,
-              raycaster,
-              rayStartPosition,
-              collisionDistance: characterDimensions?.radius ?? 0,
-              intersectObjects: scene.children.filter(
-                (e) => e.name !== 'Character' && e.name !== 'Model'
-              ),
-            });
-          }
-          return false;
+          scene,
+          characterDimensions,
+          characterFeetPosition,
+          downward,
+          deltaTime,
+          applyGravity,
+          collisionObject: isOnGround,
+          jumpPressed,
+          verticalRayOrigin,
+          move: { x: 0, y: 0, z: -playerRunSpeed * deltaTime },
         });
-
-        if (
-          [...canMoveBackwardsVertical, ...canMoveBackwardsHorizontal].every(
-            (e) => e
-          )
-        ) {
-          direction.set(0, 0, -playerRunSpeed * deltaTime);
-          character.current.translateOnAxis(direction, 0.1);
-        }
       }
-      if (forwardPressed) {
+      if (forwardPressed && characterDimensions) {
         if (runAnimation) runAnimation();
-        const forwardDirectionRays = generateRayDirections(direction, 10, 160);
-        const vert = generateVerticalRays(
+        handleMovement({
+          raycaster,
+          object: character,
           direction,
-          characterDimensions?.height ?? 0,
-          4
-        );
-
-        const canMoveForwardHorizontal = forwardDirectionRays.map(
-          (rayDirection) => {
-            if (character.current) {
-              // visualizeRay(character.current.position, rayDirection, scene, 1);
-              return !isColliding({
-                direction: rayDirection,
-                raycaster,
-                rayStartPosition: character.current.position,
-                collisionDistance: characterDimensions?.radius ?? 0,
-                intersectObjects: scene.children.filter(
-                  (e) => e.name !== 'Character' && e.name !== 'Model'
-                ),
-              });
-            }
-            return false;
-          }
-        );
-
-        const canMoveForwardVertical = vert.map((e) => {
-          if (character.current) {
-            const rayStartPosition = verticalRayOrigin.set(
-              character.current.position.x,
-              character.current.position.y + e.height,
-              character.current.position.z
-            );
-            // visualizeRay(rayStartPosition, e.direction, scene, 1);
-            return !isColliding({
-              direction: e.direction,
-              raycaster,
-              rayStartPosition,
-              collisionDistance: characterDimensions?.radius ?? 0,
-              intersectObjects: scene.children.filter(
-                (e) => e.name !== 'Character'
-              ),
-            });
-          }
-          return false;
+          scene,
+          characterDimensions,
+          characterFeetPosition,
+          downward,
+          deltaTime,
+          applyGravity,
+          collisionObject: isOnGround,
+          jumpPressed,
+          verticalRayOrigin,
+          move: { x: 0, y: 0, z: playerRunSpeed * deltaTime },
         });
+        // const slopeDetectionRay = generateSlopeDetectionRay(
+        //   raycaster,
+        //   character.current.position,
+        //   direction,
+        //   scene
+        // );
+        // const forwardDirectionRays = generateRayDirections(direction, 10, 160);
+        // const vert = generateVerticalRays(
+        //   direction,
+        //   characterDimensions?.height ?? 0,
+        //   2
+        // );
 
-        if (
-          canMoveForwardHorizontal.every((e) => Boolean(e)) &&
-          canMoveForwardVertical.every((e) => Boolean(e))
-        ) {
-          direction.set(0, 0, playerRunSpeed * deltaTime);
-          character.current.translateOnAxis(direction, 0.1);
-        }
+        // const canMoveForwardHorizontal = forwardDirectionRays.map(
+        //   (rayDirection) => {
+        //     if (character.current) {
+        //       // visualizeRay(character.current.position, rayDirection, scene, 1);
+        //       return !isColliding({
+        //         direction: rayDirection,
+        //         raycaster,
+        //         rayStartPosition: character.current.position,
+        //         collisionDistance: characterDimensions?.radius ?? 0,
+        //         intersectObjects: scene.children,
+        //       });
+        //     }
+        //     return false;
+        //   }
+        // );
+
+        // const canMoveForwardVertical = vert.map((e) => {
+        //   if (character.current) {
+        //     const rayStartPosition = verticalRayOrigin.set(
+        //       character.current.position.x,
+        //       character.current.position.y + e.height,
+        //       character.current.position.z
+        //     );
+        //     // visualizeRay(rayStartPosition, e.direction, scene, 1);
+        //     const forwardCollision = isColliding({
+        //       direction: e.direction,
+        //       raycaster,
+        //       rayStartPosition,
+        //       collisionDistance: characterDimensions?.radius ?? 0,
+        //       intersectObjects: scene.children,
+        //     });
+        //     const slopeAngle = getSlopeAngle(
+        //       forwardCollision?.distance,
+        //       slopeDetectionRay?.distance
+        //     );
+        //     if (!slopeAngle) return true;
+        //     return slopeAngle < maxSlopeAngle;
+        //   }
+        //   return false;
+        // });
+
+        // if (
+        //   canMoveForwardHorizontal.every((e) => Boolean(e)) &&
+        //   canMoveForwardVertical.every((e) => Boolean(e)) &&
+        //   characterDimensions?.height
+        // ) {
+        //   if (isOnGround) {
+        //     handleGroundCollision(
+        //       isOnGround,
+        //       character,
+        //       characterDimensions.height
+        //     );
+        //   } else {
+        //     characterFeetPosition.set(
+        //       character.current.position.x,
+        //       character.current.position.y - characterDimensions.height,
+        //       character.current.position.z
+        //     );
+        //     const isCloseToGround = isColliding({
+        //       direction: downward,
+        //       raycaster,
+        //       rayStartPosition: characterFeetPosition,
+        //       collisionDistance: 0.5,
+        //       intersectObjects: scene.children,
+        //     });
+
+        //     if (isCloseToGround && !jumpPressed) {
+        //       character.current.position.y =
+        //         isCloseToGround.point.y + characterDimensions.height;
+        //     } else {
+        //       applyGravity(deltaTime, character);
+        //     }
+        //   }
+
+        //   direction.set(0, 0, playerRunSpeed * deltaTime);
+        //   character.current.translateOnAxis(direction, 0.1);
+        // }
       }
 
       if (isJumping.current) {
-        // Update velocity and position for gravity
-        const newVelocity = velocity.current - gravity * 0.02; // Gravity effect
-        character.current.position.y += newVelocity * 0.02; // Update position
+        applyGravity(deltaTime, character);
 
-        // Ground contact
-        if (isOnGround && characterDimensions) {
-          // const collisionNormal = isOnGround.normal?.clone();
-          // const collisionObjectPositionY =
-          //   isOnGround.point.y -
-          //   (character.current.position.y - characterDimensions.height / 2);
-          // let overlapY =
-          //   characterDimensions.height / 2 - Math.abs(collisionObjectPositionY);
-          // collisionNormal?.multiplyScalar(overlapY);
-          // if (collisionNormal) {
-          //   console.debug('before', character.current.position, isOnGround);
-          //   character.current.position.y += collisionNormal.y;
-          //   console.debug('after', character.current.position, isOnGround);
-          // }
-
+        if (isOnGround && characterDimensions?.height) {
+          handleGroundCollision(
+            isOnGround,
+            character,
+            characterDimensions.height
+          );
           isJumping.current = false;
         }
-
-        velocity.current = newVelocity;
       }
 
       if (
@@ -366,6 +401,7 @@ export const CharacterController = () => {
       ) {
         idleAnimation();
       }
+
       // const delta = clock.getDelta();
       // moveModel(keyboard, activeModel);
 
@@ -395,16 +431,30 @@ export const CharacterController = () => {
         2
       );
       // const t = 1.0 - Math.pow(0.0025, delta);
-      if (controlsRef.current && isMouseDown.current) {
-        controlsRef.current.target.lerp(character.current.position, 0.5);
-        controlsRef.current.update();
-      }
-      if (!isMouseDown.current) {
+      // if (controlsRef.current && isMouseDown.current) {
+      //   controlsRef.current.target.lerp(character.current.position, 0.5);
+      //   controlsRef.current.update();
+      // }
+      if (isCameraFollow.current) {
         currentPosition.copy(cameraPositionOffset);
 
         currentLookAt.copy(cameraFocusOffset);
 
-        camera.position.lerp(currentPosition, 0.5);
+        // currentPosition should represent your desired camera position, including the offset
+        // currentLookAt should represent the point where you want the camera to look at
+
+        // Set camera X and Z directly for snappy movement
+        camera.position.x = currentPosition.x;
+        camera.position.z = currentPosition.z;
+
+        // Only use lerp for the Y-axis for smooth vertical movement
+        camera.position.y = MathUtils.lerp(
+          camera.position.y,
+          currentPosition.y,
+          0.02
+        );
+
+        // camera.position.lerp(currentPosition, 0.08);
 
         camera.lookAt(currentLookAt);
         camera.updateProjectionMatrix();
@@ -423,7 +473,7 @@ export const CharacterController = () => {
         ref={controlsRef}
       />
       {/* <mesh
-        ref={character}
+        // ref={character}
         position={[0, 10, 0]}
         castShadow
         name="Character"

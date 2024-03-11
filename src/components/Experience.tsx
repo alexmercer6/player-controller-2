@@ -6,6 +6,7 @@ import { Model } from './Model';
 import { CharacterController } from './CharacterController';
 import { Color, DirectionalLight, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
+import { MovingPlatform } from './MovingPlatform';
 
 const Experience = () => {
   const dirLight = useRef<DirectionalLight>(null);
@@ -43,6 +44,7 @@ const Experience = () => {
       <ambientLight />
 
       <CharacterController />
+      {/* Random box */}
       <mesh
         position={[0, 0.8, 0]}
         receiveShadow
@@ -51,8 +53,18 @@ const Experience = () => {
         <boxGeometry />
         <meshStandardMaterial />
       </mesh>
+
       <mesh
-        position={[0, 2, 3]}
+        position={[5, 7, 0]}
+        castShadow
+        receiveShadow
+      >
+        <boxGeometry args={[2, 1]} />
+        <meshStandardMaterial color="purple" />
+      </mesh>
+
+      <mesh
+        position={[0, 0, 30]}
         receiveShadow
         castShadow
       >
@@ -62,6 +74,97 @@ const Experience = () => {
           metalness={0.5}
         />
       </mesh>
+
+      {/* Stairs */}
+      <group position={[10, 0.5, 0]}>
+        <mesh
+          position={[10, -0.2, 30]}
+          receiveShadow
+          castShadow
+        >
+          <boxGeometry args={[2, 0.2, 1]} />
+          <meshStandardMaterial
+            roughness={0.1}
+            metalness={0.5}
+          />
+        </mesh>
+        <mesh
+          position={[10, 0, 31]}
+          receiveShadow
+          castShadow
+        >
+          <boxGeometry args={[2, 0.2, 1]} />
+          <meshStandardMaterial
+            roughness={0.1}
+            metalness={0.5}
+          />
+        </mesh>
+        <mesh
+          position={[10, 0.2, 32]}
+          receiveShadow
+          castShadow
+        >
+          <boxGeometry args={[2, 0.2, 1]} />
+          <meshStandardMaterial
+            roughness={0.1}
+            metalness={0.5}
+          />
+        </mesh>
+        <mesh
+          position={[10, 0.4, 33]}
+          receiveShadow
+          castShadow
+        >
+          <boxGeometry args={[2, 0.2, 1]} />
+          <meshStandardMaterial
+            color={'grey'}
+            roughness={0.1}
+            metalness={0.5}
+          />
+        </mesh>
+      </group>
+
+      {/* Cones */}
+      <mesh
+        position={[0, 0, 0]}
+        receiveShadow
+        castShadow
+      >
+        <coneGeometry args={[20, 10, 10]} />
+        <meshStandardMaterial
+          color={'hotpink'}
+          roughness={0.1}
+          metalness={0.5}
+        />
+      </mesh>
+
+      <mesh
+        position={[20, 0, 0]}
+        receiveShadow
+        castShadow
+      >
+        <coneGeometry args={[20, 15, 10]} />
+        <meshStandardMaterial
+          roughness={0.1}
+          metalness={0.5}
+          color={'limegreen'}
+        />
+      </mesh>
+
+      <mesh
+        position={[40, 0, 0]}
+        receiveShadow
+        castShadow
+      >
+        <coneGeometry args={[20, 25, 10]} />
+        <meshStandardMaterial
+          color={'grey'}
+          roughness={0.1}
+          metalness={0.5}
+        />
+      </mesh>
+
+      <MovingPlatform />
 
       <Ground />
     </>

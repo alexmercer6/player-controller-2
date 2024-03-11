@@ -67,25 +67,16 @@ export function Model({
   ) as GLTFResult;
   const { actions: t } = useAnimations(animations, group);
   const actions = t as GLTFActions;
-  // useEffect(() => {
-  //   actions['CharacterArmature|Walk']?.reset().fadeIn(0.03).play();
-
-  //   return () => {
-  //     actions['CharacterArmature|Death']?.reset().fadeOut(0.3);
-  //   };
-  // }, []);
 
   useEffect(() => {
     if (group.current) {
       group.current.traverse((child) => {
         if (child instanceof THREE.Mesh) {
-          console.debug(child.name);
           if (child.name === 'Wizard_Staff') {
             //TODO: Create interactions
           }
           if (child.name === 'Pouch') {
             child.removeFromParent();
-            //TODO: Create interactions
           }
           child.castShadow = true;
           child.layers.set(1); // Assigns the model to layer 1

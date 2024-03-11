@@ -24,6 +24,7 @@ export const visualizeRay = (
 
   const line = new THREE.Line(geometry, material);
   line.name = 'debug ray';
+  line.layers.set(1);
   scene.add(line);
 
   // Return the line object in case you want to remove or modify it later

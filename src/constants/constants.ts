@@ -1,8 +1,9 @@
 export const gravity = 9.82;
 export const collisionDistance = 1;
-export const playerRunSpeed = 1;
-export const playerWalkSpeed = 0.5;
-export const playerTurnSpeed = 0.05;
-export const playerRollSpeed = 5;
-export const lookSpeed = 0.2;
-export const jumpVelocity = 10;
+export const playerRunSpeed = 50;
+export const playerWalkSpeed = 50;
+export const playerTurnSpeed = 5;
+export const playerRollSpeed = 500;
+export const lookSpeed = 20;
+export const jumpVelocity = 8;
+export const maxSlopeAngle = 50;

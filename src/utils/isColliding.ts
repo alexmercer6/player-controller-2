@@ -15,12 +15,9 @@ export const isColliding = ({
   intersectObjects,
 }: isCollidingProps) => {
   raycaster.set(rayStartPosition, direction.normalize());
-  const intersections = raycaster.intersectObjects(
-    intersectObjects.filter((e) => e.name !== 'debug ray'),
-    true
-  );
+  const intersections = raycaster.intersectObjects(intersectObjects, true);
   return intersections.length > 0 &&
-    intersections[0].distance < collisionDistance
+    intersections[0].distance <= collisionDistance
     ? intersections[0]
     : null;
 };
